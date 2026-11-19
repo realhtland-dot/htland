@@ -1,0 +1,752 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Pillar 4.1: Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'real.htland@gmail.com';
+    }
+
+    function isOwner(uid) {
+      return isVerified() && request.auth.uid == uid;
+    }
+
+    function hasUserProfile() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (isVerified() && hasUserProfile() && getUserRole() in ['SUPER_ADMIN', 'ADMIN']);
+    }
+
+    function isManagerOrAbove() {
+      return isBootstrappedAdmin() || (isVerified() && hasUserProfile() && getUserRole() in ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+    }
+
+    function isValidStr(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isBoundedStringArray(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= 128));
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'teamId', 'phone', 'status', 'avatarUrl', 'assignedPageIds', 'createdAt', 'updatedAt'])
+        && isValidStr(data.uid, 1, 128)
+        && isValidStr(data.email, 3, 200)
+        && isValidStr(data.displayName, 1, 120)
+        && data.role in ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALE']
+        && data.status in ['ACTIVE', 'INACTIVE']
+        && (!('teamId' in data) || isValidStr(data.teamId, 0, 128))
+        && (!('phone' in data) || isValidStr(data.phone, 0, 32))
+        && (!('avatarUrl' in data) || isValidStr(data.avatarUrl, 0, 500))
+        && (!('assignedPageIds' in data) || isBoundedStringArray(data.assignedPageIds, 20))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStaffDirectory(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'role', 'status', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'role', 'teamId', 'status', 'avatarUrl', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.uid, 1, 128)
+        && isValidStr(data.displayName, 1, 120)
+        && data.role in ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALE']
+        && data.status in ['ACTIVE', 'INACTIVE']
+        && (!('teamId' in data) || isValidStr(data.teamId, 0, 128))
+        && (!('avatarUrl' in data) || isValidStr(data.avatarUrl, 0, 500))
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTeam(data) {
+      return data.keys().hasAll(['id', 'name', 'leaderUid', 'region', 'viewerUids', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'leaderUid', 'leaderName', 'region', 'memberUids', 'viewerUids', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.name, 1, 120)
+        && isValidStr(data.leaderUid, 1, 128)
+        && (!('leaderName' in data) || isValidStr(data.leaderName, 0, 120))
+        && isValidStr(data.region, 1, 120)
+        && (!('memberUids' in data) || isBoundedStringArray(data.memberUids, 50))
+        && isBoundedStringArray(data.viewerUids, 50)
+        && isValidStr(data.createdByUid, 1, 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFacebookPage(data) {
+      return data.keys().hasAll(['id', 'pageId', 'name', 'connectionStatus', 'webhookSubscribed', 'aiEnabled', 'autoAssignRule', 'connectedByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'pageId', 'name', 'category', 'avatarUrl', 'connectionStatus', 'webhookSubscribed', 'aiEnabled', 'autoAssignRule', 'totalConversations', 'totalCustomers', 'totalMessages', 'connectedByUid', 'lastError', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.pageId, 1, 128)
+        && isValidStr(data.name, 1, 200)
+        && (!('category' in data) || isValidStr(data.category, 0, 120))
+        && (!('avatarUrl' in data) || isValidStr(data.avatarUrl, 0, 500))
+        && data.connectionStatus in ['CONNECTED', 'EXPIRED', 'DISCONNECTED']
+        && data.webhookSubscribed is bool
+        && data.aiEnabled is bool
+        && data.autoAssignRule in ['ROUND_ROBIN', 'REGION', 'TEAM', 'MANUAL']
+        && (!('totalConversations' in data) || (data.totalConversations is number && data.totalConversations >= 0))
+        && (!('totalCustomers' in data) || (data.totalCustomers is number && data.totalCustomers >= 0))
+        && (!('totalMessages' in data) || (data.totalMessages is number && data.totalMessages >= 0))
+        && isValidStr(data.connectedByUid, 1, 128)
+        && (!('lastError' in data) || isValidStr(data.lastError, 0, 500))
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['id', 'fullName', 'phones', 'intent', 'priority', 'status', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'fullName', 'primaryPhone', 'phones', 'facebookId', 'facebookName', 'avatarUrl', 'sourcePageId', 'sourcePageName', 'sourceChannel', 'intent', 'propertyType', 'province', 'district', 'budgetMin', 'budgetMax', 'areaMin', 'areaMax', 'legalRequirement', 'leadScore', 'priority', 'status', 'assignedToUid', 'assignedToName', 'tags', 'notesSummary', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.fullName, 1, 150)
+        && (!('primaryPhone' in data) || isValidStr(data.primaryPhone, 0, 32))
+        && isBoundedStringArray(data.phones, 10)
+        && (!('facebookId' in data) || isValidStr(data.facebookId, 0, 128))
+        && (!('facebookName' in data) || isValidStr(data.facebookName, 0, 150))
+        && (!('avatarUrl' in data) || isValidStr(data.avatarUrl, 0, 500))
+        && (!('sourcePageId' in data) || isValidStr(data.sourcePageId, 0, 128))
+        && (!('sourcePageName' in data) || isValidStr(data.sourcePageName, 0, 200))
+        && (!('sourceChannel' in data) || isValidStr(data.sourceChannel, 0, 100))
+        && data.intent in ['BUY_LAND', 'BUY_HOUSE', 'SELL_LAND', 'SELL_HOUSE', 'RENT', 'LEASE', 'INVEST', 'PROJECT_INFO', 'BROKER', 'UNCLEAR']
+        && (!('propertyType' in data) || isValidStr(data.propertyType, 0, 80))
+        && (!('province' in data) || isValidStr(data.province, 0, 100))
+        && (!('district' in data) || isValidStr(data.district, 0, 100))
+        && (!('budgetMin' in data) || data.budgetMin == null || (data.budgetMin is number && data.budgetMin >= 0))
+        && (!('budgetMax' in data) || data.budgetMax == null || (data.budgetMax is number && data.budgetMax >= 0))
+        && (!('areaMin' in data) || data.areaMin == null || (data.areaMin is number && data.areaMin >= 0))
+        && (!('areaMax' in data) || data.areaMax == null || (data.areaMax is number && data.areaMax >= 0))
+        && (!('legalRequirement' in data) || isValidStr(data.legalRequirement, 0, 200))
+        && (!('leadScore' in data) || (data.leadScore is number && data.leadScore >= 0 && data.leadScore <= 100))
+        && data.priority in ['HIGH', 'MEDIUM', 'LOW']
+        && isValidStr(data.status, 1, 80)
+        && (!('assignedToUid' in data) || isValidStr(data.assignedToUid, 0, 128))
+        && (!('assignedToName' in data) || isValidStr(data.assignedToName, 0, 120))
+        && (!('tags' in data) || isBoundedStringArray(data.tags, 10))
+        && (!('notesSummary' in data) || isValidStr(data.notesSummary, 0, 1000))
+        && isValidStr(data.createdByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCustomerNote(data) {
+      return data.keys().hasAll(['id', 'customerId', 'authorUid', 'authorName', 'content', 'viewerUids', 'createdAt'])
+        && data.keys().hasOnly(['id', 'customerId', 'authorUid', 'authorName', 'content', 'viewerUids', 'createdAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.customerId, 1, 128)
+        && isValidStr(data.authorUid, 1, 128)
+        && isValidStr(data.authorName, 1, 120)
+        && isValidStr(data.content, 1, 2000)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCustomerActivity(data) {
+      return data.keys().hasAll(['id', 'customerId', 'actorUid', 'actorName', 'actionType', 'description', 'viewerUids', 'createdAt'])
+        && data.keys().hasOnly(['id', 'customerId', 'actorUid', 'actorName', 'actionType', 'description', 'viewerUids', 'createdAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.customerId, 1, 128)
+        && isValidStr(data.actorUid, 1, 128)
+        && isValidStr(data.actorName, 1, 120)
+        && isValidStr(data.actionType, 1, 80)
+        && isValidStr(data.description, 1, 1000)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll(['id', 'customerId', 'customerName', 'pageId', 'pageName', 'lastMessage', 'unreadCount', 'status', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'customerId', 'customerName', 'customerAvatar', 'pageId', 'pageName', 'facebookUserId', 'lastMessage', 'unreadCount', 'isImportant', 'hasPhone', 'assignedToUid', 'assignedToName', 'status', 'tags', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.customerId, 1, 128)
+        && isValidStr(data.customerName, 1, 150)
+        && (!('customerAvatar' in data) || isValidStr(data.customerAvatar, 0, 500))
+        && isValidStr(data.pageId, 1, 128)
+        && isValidStr(data.pageName, 1, 200)
+        && (!('facebookUserId' in data) || isValidStr(data.facebookUserId, 0, 128))
+        && isValidStr(data.lastMessage, 0, 1000)
+        && data.unreadCount is number && data.unreadCount >= 0
+        && (!('isImportant' in data) || data.isImportant is bool)
+        && (!('hasPhone' in data) || data.hasPhone is bool)
+        && (!('assignedToUid' in data) || isValidStr(data.assignedToUid, 0, 128))
+        && (!('assignedToName' in data) || isValidStr(data.assignedToName, 0, 120))
+        && data.status in ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'ARCHIVED']
+        && (!('tags' in data) || isBoundedStringArray(data.tags, 10))
+        && isValidStr(data.createdByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['id', 'conversationId', 'senderType', 'senderUid', 'senderName', 'text', 'deliveryStatus', 'viewerUids', 'createdAt'])
+        && data.keys().hasOnly(['id', 'conversationId', 'senderType', 'senderUid', 'senderName', 'text', 'attachmentUrl', 'attachmentType', 'deliveryStatus', 'extractedPhones', 'viewerUids', 'createdAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.conversationId, 1, 128)
+        && data.senderType in ['CUSTOMER', 'AGENT', 'SYSTEM']
+        && isValidStr(data.senderUid, 1, 128)
+        && isValidStr(data.senderName, 1, 120)
+        && isValidStr(data.text, 0, 4000)
+        && (!('attachmentUrl' in data) || isValidStr(data.attachmentUrl, 0, 500))
+        && (!('attachmentType' in data) || isValidStr(data.attachmentType, 0, 40))
+        && data.deliveryStatus in ['RECEIVED', 'SENT', 'DELIVERED', 'FAILED']
+        && (!('extractedPhones' in data) || isBoundedStringArray(data.extractedPhones, 5))
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidProperty(data) {
+      return data.keys().hasAll(['id', 'code', 'title', 'propertyType', 'transactionType', 'province', 'district', 'areaSqm', 'priceVnd', 'status', 'ownerUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'code', 'title', 'propertyType', 'transactionType', 'province', 'district', 'areaSqm', 'priceVnd', 'legalStatus', 'status', 'imageUrl', 'description', 'ownerUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.code, 1, 50)
+        && isValidStr(data.title, 1, 200)
+        && data.propertyType in ['LAND', 'HOUSE', 'APARTMENT', 'VILLA', 'COMMERCIAL']
+        && data.transactionType in ['BUY', 'SELL', 'RENT']
+        && isValidStr(data.province, 1, 100)
+        && isValidStr(data.district, 1, 100)
+        && data.areaSqm is number && data.areaSqm > 0
+        && data.priceVnd is number && data.priceVnd >= 0
+        && (!('legalStatus' in data) || isValidStr(data.legalStatus, 0, 120))
+        && data.status in ['AVAILABLE', 'RESERVED', 'SOLD']
+        && (!('imageUrl' in data) || isValidStr(data.imageUrl, 0, 500))
+        && (!('description' in data) || isValidStr(data.description, 0, 2000))
+        && isValidStr(data.ownerUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['id', 'customerId', 'customerName', 'title', 'taskType', 'dueDate', 'priority', 'status', 'assignedToUid', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'customerId', 'customerName', 'title', 'taskType', 'dueDate', 'priority', 'status', 'assignedToUid', 'assignedToName', 'notes', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.customerId, 1, 128)
+        && isValidStr(data.customerName, 1, 150)
+        && isValidStr(data.title, 1, 200)
+        && data.taskType in ['CALL', 'MESSAGE', 'FOLLOW_UP', 'SEND_INFO']
+        && isValidStr(data.dueDate, 1, 40)
+        && data.priority in ['HIGH', 'MEDIUM', 'LOW']
+        && data.status in ['PENDING', 'COMPLETED', 'OVERDUE']
+        && isValidStr(data.assignedToUid, 1, 128)
+        && (!('assignedToName' in data) || isValidStr(data.assignedToName, 0, 120))
+        && (!('notes' in data) || isValidStr(data.notes, 0, 1000))
+        && isValidStr(data.createdByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAppointment(data) {
+      return data.keys().hasAll(['id', 'customerId', 'customerName', 'location', 'scheduledAt', 'status', 'assignedToUid', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'customerId', 'customerName', 'propertyId', 'propertyTitle', 'location', 'scheduledAt', 'status', 'assignedToUid', 'assignedToName', 'notes', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.customerId, 1, 128)
+        && isValidStr(data.customerName, 1, 150)
+        && (!('propertyId' in data) || isValidStr(data.propertyId, 0, 128))
+        && (!('propertyTitle' in data) || isValidStr(data.propertyTitle, 0, 200))
+        && isValidStr(data.location, 1, 300)
+        && isValidStr(data.scheduledAt, 1, 40)
+        && data.status in ['SCHEDULED', 'CONFIRMED', 'COMPLETED', 'CANCELLED']
+        && isValidStr(data.assignedToUid, 1, 128)
+        && (!('assignedToName' in data) || isValidStr(data.assignedToName, 0, 120))
+        && (!('notes' in data) || isValidStr(data.notes, 0, 1000))
+        && isValidStr(data.createdByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAiAnalysis(data) {
+      return data.keys().hasAll(['id', 'sourceText', 'intent', 'leadScore', 'priority', 'summary', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'conversationId', 'customerId', 'customerName', 'sourceText', 'phone', 'intent', 'propertyType', 'province', 'district', 'budgetMin', 'budgetMax', 'areaMin', 'areaMax', 'legalRequirement', 'leadScore', 'priority', 'summary', 'nextAction', 'provider', 'isEditedByHuman', 'createdByUid', 'viewerUids', 'createdAt', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && (!('conversationId' in data) || isValidStr(data.conversationId, 0, 128))
+        && (!('customerId' in data) || isValidStr(data.customerId, 0, 128))
+        && (!('customerName' in data) || isValidStr(data.customerName, 0, 150))
+        && isValidStr(data.sourceText, 1, 4000)
+        && (!('phone' in data) || data.phone == null || isValidStr(data.phone, 0, 32))
+        && isValidStr(data.intent, 1, 40)
+        && (!('propertyType' in data) || data.propertyType == null || isValidStr(data.propertyType, 0, 40))
+        && (!('province' in data) || data.province == null || isValidStr(data.province, 0, 100))
+        && (!('district' in data) || data.district == null || isValidStr(data.district, 0, 100))
+        && (!('budgetMin' in data) || data.budgetMin == null || data.budgetMin is number)
+        && (!('budgetMax' in data) || data.budgetMax == null || data.budgetMax is number)
+        && (!('areaMin' in data) || data.areaMin == null || data.areaMin is number)
+        && (!('areaMax' in data) || data.areaMax == null || data.areaMax is number)
+        && (!('legalRequirement' in data) || data.legalRequirement == null || isValidStr(data.legalRequirement, 0, 200))
+        && data.leadScore is number && data.leadScore >= 0 && data.leadScore <= 100
+        && data.priority in ['HIGH', 'MEDIUM', 'LOW']
+        && isValidStr(data.summary, 1, 1000)
+        && (!('nextAction' in data) || data.nextAction == null || isValidStr(data.nextAction, 0, 300))
+        && (!('provider' in data) || isValidStr(data.provider, 0, 40))
+        && (!('isEditedByHuman' in data) || data.isEditedByHuman is bool)
+        && isValidStr(data.createdByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTag(data) {
+      return data.keys().hasAll(['id', 'name', 'color', 'createdByUid', 'viewerUids', 'createdAt'])
+        && data.keys().hasOnly(['id', 'name', 'color', 'category', 'createdByUid', 'viewerUids', 'createdAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.name, 1, 60)
+        && isValidStr(data.color, 1, 30)
+        && (!('category' in data) || isValidStr(data.category, 0, 60))
+        && isValidStr(data.createdByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCustomerSource(data) {
+      return data.keys().hasAll(['id', 'name', 'channel', 'isActive', 'createdByUid', 'viewerUids', 'createdAt'])
+        && data.keys().hasOnly(['id', 'name', 'channel', 'isActive', 'createdByUid', 'viewerUids', 'createdAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.name, 1, 100)
+        && isValidStr(data.channel, 1, 60)
+        && data.isActive is bool
+        && isValidStr(data.createdByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'recipientUid', 'title', 'body', 'type', 'isRead', 'createdAt'])
+        && data.keys().hasOnly(['id', 'recipientUid', 'title', 'body', 'type', 'isRead', 'linkTarget', 'createdAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.recipientUid, 1, 128)
+        && isValidStr(data.title, 1, 160)
+        && isValidStr(data.body, 1, 500)
+        && data.type in ['MESSAGE', 'PHONE_EXTRACTED', 'ASSIGNMENT', 'APPOINTMENT', 'SYSTEM']
+        && data.isRead is bool
+        && (!('linkTarget' in data) || isValidStr(data.linkTarget, 0, 120))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'actorUid', 'actorName', 'action', 'resource', 'details', 'createdAt'])
+        && data.keys().hasOnly(['id', 'actorUid', 'actorName', 'action', 'resource', 'details', 'createdAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.actorUid, 1, 128)
+        && isValidStr(data.actorName, 1, 120)
+        && isValidStr(data.action, 1, 100)
+        && isValidStr(data.resource, 1, 100)
+        && isValidStr(data.details, 1, 1000)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSystemSetting(data) {
+      return data.keys().hasAll(['id', 'companyName', 'autoAssignMethod', 'preventDuplicateAssignment', 'aiAutoAnalyze', 'aiProvider', 'updatedByUid', 'viewerUids', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyName', 'autoAssignMethod', 'preventDuplicateAssignment', 'aiAutoAnalyze', 'aiProvider', 'dataRetentionDays', 'updatedByUid', 'viewerUids', 'updatedAt'])
+        && isValidStr(data.id, 1, 128)
+        && isValidStr(data.companyName, 1, 150)
+        && data.autoAssignMethod in ['ROUND_ROBIN', 'BY_PAGE', 'BY_REGION', 'BY_TEAM', 'MANUAL']
+        && data.preventDuplicateAssignment is bool
+        && data.aiAutoAnalyze is bool
+        && data.aiProvider in ['gemini', 'openai']
+        && (!('dataRetentionDays' in data) || (data.dataRetentionDays is number && data.dataRetentionDays >= 30))
+        && isValidStr(data.updatedByUid, 1, 128)
+        && isBoundedStringArray(data.viewerUids, 50)
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Users (PII-protected)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin() || isManagerOrAbove());
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.uid == request.auth.uid);
+      allow create: if isValidId(userId) && isVerified() && isValidUser(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (isBootstrappedAdmin() && incoming().role == 'SUPER_ADMIN') ||
+          (request.auth.uid == userId && incoming().role == 'SALE' && incoming().status == 'ACTIVE') ||
+          isAdmin()
+        );
+      allow update: if isValidId(userId) && isVerified() && isValidUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'avatarUrl', 'updatedAt']))
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 2. Staff Directory (Non-PII Split Collection)
+    match /staff_directory/{userId} {
+      allow get: if isValidId(userId) && isVerified() && (isBootstrappedAdmin() || request.auth.uid in existing().viewerUids || existing().uid == request.auth.uid);
+      allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids || resource.data.uid == request.auth.uid);
+      allow create: if isValidId(userId) && isVerified() && isValidStaffDirectory(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (request.auth.uid == userId && incoming().uid == request.auth.uid && incoming().role == 'SALE')
+        );
+      allow update: if isValidId(userId) && isVerified() && isValidStaffDirectory(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'updatedAt']))
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 3. Teams
+    match /teams/{teamId} {
+      allow get: if isValidId(teamId) && isVerified() && (isAdmin() || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(teamId) && isManagerOrAbove() && isValidTeam(incoming())
+        && incoming().id == teamId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(teamId) && isManagerOrAbove() && isValidTeam(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'region', 'memberUids', 'viewerUids', 'updatedAt'])
+        );
+      allow delete: if isValidId(teamId) && isAdmin();
+    }
+
+    // 4. Facebook Pages
+    match /facebook_pages/{pageId} {
+      allow get: if isValidId(pageId) && isVerified() && (isAdmin() || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(pageId) && isManagerOrAbove() && isValidFacebookPage(incoming())
+        && incoming().id == pageId
+        && incoming().connectedByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(pageId) && isManagerOrAbove() && isValidFacebookPage(incoming())
+        && incoming().id == existing().id
+        && incoming().connectedByUid == existing().connectedByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['aiEnabled', 'autoAssignRule', 'connectionStatus', 'webhookSubscribed', 'totalConversations', 'totalCustomers', 'totalMessages', 'lastError', 'viewerUids', 'updatedAt'])
+        );
+      allow delete: if isValidId(pageId) && isAdmin();
+    }
+
+    // 5. Customers
+    match /customers/{customerId} {
+      allow get: if isValidId(customerId) && isVerified() && (isAdmin() || existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.assignedToUid == request.auth.uid || resource.data.createdByUid == request.auth.uid || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(customerId) && isVerified() && isValidCustomer(incoming())
+        && incoming().id == customerId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(customerId) && isVerified() && isValidCustomer(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          ((existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid || request.auth.uid in existing().viewerUids)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'primaryPhone', 'phones', 'intent', 'propertyType', 'province', 'district', 'budgetMin', 'budgetMax', 'areaMin', 'areaMax', 'legalRequirement', 'leadScore', 'priority', 'status', 'tags', 'notesSummary', 'assignedToUid', 'assignedToName', 'viewerUids', 'updatedAt']))
+        );
+      allow delete: if isValidId(customerId) && isAdmin();
+
+      // Subcollection: Notes (Master Gate)
+      match /notes/{noteId} {
+        allow get: if isValidId(customerId) && isValidId(noteId) && isVerified()
+          && exists(/databases/$(database)/documents/customers/$(customerId))
+          && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/customers/$(customerId)).data.viewerUids);
+        allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+        allow create: if isValidId(customerId) && isValidId(noteId) && isVerified() && isValidCustomerNote(incoming())
+          && (
+            (exists(/databases/$(database)/documents/customers/$(customerId))
+              && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/customers/$(customerId)).data.viewerUids))
+            || (existsAfter(/databases/$(database)/documents/customers/$(customerId))
+              && (isAdmin() || request.auth.uid in getAfter(/databases/$(database)/documents/customers/$(customerId)).data.viewerUids))
+          )
+          && incoming().id == noteId
+          && incoming().customerId == customerId
+          && incoming().authorUid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(customerId) && isValidId(noteId) && isAdmin();
+      }
+
+      // Subcollection: Activities (Master Gate)
+      match /activities/{activityId} {
+        allow get: if isValidId(customerId) && isValidId(activityId) && isVerified()
+          && exists(/databases/$(database)/documents/customers/$(customerId))
+          && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/customers/$(customerId)).data.viewerUids);
+        allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+        allow create: if isValidId(customerId) && isValidId(activityId) && isVerified() && isValidCustomerActivity(incoming())
+          && (
+            (exists(/databases/$(database)/documents/customers/$(customerId))
+              && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/customers/$(customerId)).data.viewerUids))
+            || (existsAfter(/databases/$(database)/documents/customers/$(customerId))
+              && (isAdmin() || request.auth.uid in getAfter(/databases/$(database)/documents/customers/$(customerId)).data.viewerUids))
+          )
+          && incoming().id == activityId
+          && incoming().customerId == customerId
+          && incoming().actorUid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(customerId) && isValidId(activityId) && isAdmin();
+      }
+    }
+
+    // 6. Conversations
+    match /conversations/{conversationId} {
+      allow get: if isValidId(conversationId) && isVerified() && (isAdmin() || existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.assignedToUid == request.auth.uid || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(conversationId) && isVerified() && isValidConversation(incoming())
+        && incoming().id == conversationId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(conversationId) && isVerified() && isValidConversation(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (existing().status != 'ARCHIVED'
+            && (existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids)
+            && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'unreadCount', 'hasPhone', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['isImportant', 'tags', 'status', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['assignedToUid', 'assignedToName', 'viewerUids', 'updatedAt'])
+            ))
+        );
+      allow delete: if isValidId(conversationId) && isAdmin();
+
+      // Subcollection: Messages (Master Gate)
+      match /messages/{messageId} {
+        allow get: if isValidId(conversationId) && isValidId(messageId) && isVerified()
+          && exists(/databases/$(database)/documents/conversations/$(conversationId))
+          && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.viewerUids);
+        allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+        allow create: if isValidId(conversationId) && isValidId(messageId) && isVerified() && isValidMessage(incoming())
+          && (
+            (exists(/databases/$(database)/documents/conversations/$(conversationId))
+              && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.viewerUids))
+            || (existsAfter(/databases/$(database)/documents/conversations/$(conversationId))
+              && (isAdmin() || request.auth.uid in getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.viewerUids))
+          )
+          && incoming().id == messageId
+          && incoming().conversationId == conversationId
+          && incoming().senderUid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update: if isValidId(conversationId) && isValidId(messageId) && isAdmin() && isValidMessage(incoming());
+        allow delete: if isValidId(conversationId) && isValidId(messageId) && isAdmin();
+      }
+    }
+
+    // 7. Properties
+    match /properties/{propertyId} {
+      allow get: if isValidId(propertyId) && isVerified() && (isAdmin() || existing().ownerUid == request.auth.uid || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.ownerUid == request.auth.uid || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(propertyId) && isVerified() && isValidProperty(incoming())
+        && incoming().id == propertyId
+        && incoming().ownerUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(propertyId) && isVerified() && isValidProperty(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          ((existing().ownerUid == request.auth.uid || isManagerOrAbove())
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'propertyType', 'transactionType', 'province', 'district', 'areaSqm', 'priceVnd', 'legalStatus', 'status', 'imageUrl', 'description', 'viewerUids', 'updatedAt']))
+        );
+      allow delete: if isValidId(propertyId) && isAdmin();
+    }
+
+    // 8. Tasks
+    match /tasks/{taskId} {
+      allow get: if isValidId(taskId) && isVerified() && (isAdmin() || existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.assignedToUid == request.auth.uid || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(taskId) && isVerified() && isValidTask(incoming())
+        && incoming().id == taskId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(taskId) && isVerified() && isValidTask(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (existing().status != 'COMPLETED'
+            && (existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'dueDate', 'priority', 'updatedAt']))
+        );
+      allow delete: if isValidId(taskId) && isAdmin();
+    }
+
+    // 9. Appointments
+    match /appointments/{appointmentId} {
+      allow get: if isValidId(appointmentId) && isVerified() && (isAdmin() || existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.assignedToUid == request.auth.uid || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(appointmentId) && isVerified() && isValidAppointment(incoming())
+        && incoming().id == appointmentId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(appointmentId) && isVerified() && isValidAppointment(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (!(existing().status in ['COMPLETED', 'CANCELLED'])
+            && (existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'scheduledAt', 'location', 'notes', 'updatedAt']))
+        );
+      allow delete: if isValidId(appointmentId) && isAdmin();
+    }
+
+    // 10. AI Analyses
+    match /ai_analyses/{analysisId} {
+      allow get: if isValidId(analysisId) && isVerified() && (isAdmin() || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(analysisId) && isVerified() && isValidAiAnalysis(incoming())
+        && incoming().id == analysisId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(analysisId) && isVerified() && isValidAiAnalysis(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (request.auth.uid in existing().viewerUids
+            && incoming().diff(existing()).affectedKeys().hasOnly(['intent', 'propertyType', 'province', 'district', 'budgetMin', 'budgetMax', 'areaMin', 'areaMax', 'legalRequirement', 'leadScore', 'priority', 'summary', 'nextAction', 'isEditedByHuman', 'updatedAt']))
+        );
+      allow delete: if isValidId(analysisId) && isAdmin();
+    }
+
+    // 11. Tags
+    match /tags/{tagId} {
+      allow get: if isValidId(tagId) && isVerified() && (isAdmin() || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(tagId) && isVerified() && isValidTag(incoming())
+        && incoming().id == tagId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(tagId) && isManagerOrAbove() && isValidTag(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(tagId) && isAdmin();
+    }
+
+    // 12. Customer Sources
+    match /customer_sources/{sourceId} {
+      allow get: if isValidId(sourceId) && isVerified() && (isAdmin() || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(sourceId) && isManagerOrAbove() && isValidCustomerSource(incoming())
+        && incoming().id == sourceId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(sourceId) && isManagerOrAbove() && isValidCustomerSource(incoming())
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(sourceId) && isAdmin();
+    }
+
+    // 13. Notifications
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isVerified() && (isAdmin() || existing().recipientUid == request.auth.uid);
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.recipientUid == request.auth.uid);
+      allow create: if isValidId(notificationId) && isVerified() && isValidNotification(incoming())
+        && incoming().id == notificationId
+        && incoming().createdAt == request.time
+        && (isAdmin() || incoming().recipientUid == request.auth.uid);
+      allow update: if isValidId(notificationId) && isVerified() && isValidNotification(incoming())
+        && incoming().id == existing().id
+        && incoming().recipientUid == existing().recipientUid
+        && incoming().createdAt == existing().createdAt
+        && (isAdmin() || (existing().recipientUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['isRead'])));
+      allow delete: if isValidId(notificationId) && (isAdmin() || existing().recipientUid == request.auth.uid);
+    }
+
+    // 14. Audit Logs
+    match /audit_logs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.actorUid == request.auth.uid);
+      allow create: if isValidId(logId) && isVerified() && isValidAuditLog(incoming())
+        && incoming().id == logId
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // 15. System Settings
+    match /system_settings/{settingId} {
+      allow get: if isValidId(settingId) && isVerified() && (isAdmin() || request.auth.uid in existing().viewerUids);
+      allow list: if isVerified() && (isBootstrappedAdmin() || request.auth.uid in resource.data.viewerUids);
+      allow create: if isValidId(settingId) && isAdmin() && isValidSystemSetting(incoming())
+        && incoming().id == settingId
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(settingId) && isAdmin() && isValidSystemSetting(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+  }
+}

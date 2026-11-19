@@ -1,0 +1,456 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Tài khoản nhân viên trong hệ thống CRM (chứa thông tin cá nhân PII được bảo vệ).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "ADMIN", "MANAGER", "SALE"] },
+        "teamId": { "type": "string", "maxLength": 128 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "assignedPageIds": { "type": "array", "maxLength": 20 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "StaffDirectoryEntry": {
+      "title": "StaffDirectoryEntry",
+      "description": "Danh bạ nhân viên không chứa thông tin nhạy cảm dùng cho phân công hội thoại và khách hàng.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "ADMIN", "MANAGER", "SALE"] },
+        "teamId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "status", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "Team": {
+      "title": "Team",
+      "description": "Nhóm kinh doanh bất động sản theo khu vực hoặc dự án.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "leaderUid": { "type": "string", "maxLength": 128 },
+        "leaderName": { "type": "string", "maxLength": 120 },
+        "region": { "type": "string", "maxLength": 120 },
+        "memberUids": { "type": "array", "maxLength": 50 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "leaderUid", "region", "viewerUids", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "FacebookPage": {
+      "title": "FacebookPage",
+      "description": "Thông tin Fanpage Facebook kết nối Messenger (không lưu token thô).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "pageId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 120 },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "connectionStatus": { "type": "string", "enum": ["CONNECTED", "EXPIRED", "DISCONNECTED"] },
+        "webhookSubscribed": { "type": "boolean" },
+        "aiEnabled": { "type": "boolean" },
+        "autoAssignRule": { "type": "string", "enum": ["ROUND_ROBIN", "REGION", "TEAM", "MANUAL"] },
+        "totalConversations": { "type": "number" },
+        "totalCustomers": { "type": "number" },
+        "totalMessages": { "type": "number" },
+        "connectedByUid": { "type": "string", "maxLength": 128 },
+        "lastError": { "type": "string", "maxLength": 500 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "pageId", "name", "connectionStatus", "webhookSubscribed", "aiEnabled", "autoAssignRule", "connectedByUid", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Hồ sơ khách hàng bất động sản CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "primaryPhone": { "type": "string", "maxLength": 32 },
+        "phones": { "type": "array", "maxLength": 10 },
+        "facebookId": { "type": "string", "maxLength": 128 },
+        "facebookName": { "type": "string", "maxLength": 150 },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "sourcePageId": { "type": "string", "maxLength": 128 },
+        "sourcePageName": { "type": "string", "maxLength": 200 },
+        "sourceChannel": { "type": "string", "maxLength": 100 },
+        "intent": { "type": "string", "enum": ["BUY_LAND", "BUY_HOUSE", "SELL_LAND", "SELL_HOUSE", "RENT", "LEASE", "INVEST", "PROJECT_INFO", "BROKER", "UNCLEAR"] },
+        "propertyType": { "type": "string", "maxLength": 80 },
+        "province": { "type": "string", "maxLength": 100 },
+        "district": { "type": "string", "maxLength": 100 },
+        "budgetMin": { "type": "number" },
+        "budgetMax": { "type": "number" },
+        "areaMin": { "type": "number" },
+        "areaMax": { "type": "number" },
+        "legalRequirement": { "type": "string", "maxLength": 200 },
+        "leadScore": { "type": "number" },
+        "priority": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+        "status": { "type": "string", "maxLength": 80 },
+        "assignedToUid": { "type": "string", "maxLength": 128 },
+        "assignedToName": { "type": "string", "maxLength": 120 },
+        "tags": { "type": "array", "maxLength": 10 },
+        "notesSummary": { "type": "string", "maxLength": 1000 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fullName", "phones", "intent", "priority", "status", "createdByUid", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "CustomerNote": {
+      "title": "CustomerNote",
+      "description": "Ghi chú chăm sóc nội bộ của nhân viên cho khách hàng.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "authorUid": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "content": { "type": "string", "maxLength": 2000 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "authorUid", "authorName", "content", "viewerUids", "createdAt"]
+    },
+    "CustomerActivity": {
+      "title": "CustomerActivity",
+      "description": "Nhật ký tương tác và bàn giao khách hàng.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "actionType": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "actorUid", "actorName", "actionType", "description", "viewerUids", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Hội thoại Messenger đa Fanpage.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "customerAvatar": { "type": "string", "maxLength": 500 },
+        "pageId": { "type": "string", "maxLength": 128 },
+        "pageName": { "type": "string", "maxLength": 200 },
+        "facebookUserId": { "type": "string", "maxLength": 128 },
+        "lastMessage": { "type": "string", "maxLength": 1000 },
+        "unreadCount": { "type": "number" },
+        "isImportant": { "type": "boolean" },
+        "hasPhone": { "type": "boolean" },
+        "assignedToUid": { "type": "string", "maxLength": 128 },
+        "assignedToName": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["OPEN", "IN_PROGRESS", "RESOLVED", "ARCHIVED"] },
+        "tags": { "type": "array", "maxLength": 10 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "customerName", "pageId", "pageName", "lastMessage", "unreadCount", "status", "createdByUid", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Tin nhắn chi tiết trong hội thoại Messenger.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "conversationId": { "type": "string", "maxLength": 128 },
+        "senderType": { "type": "string", "enum": ["CUSTOMER", "AGENT", "SYSTEM"] },
+        "senderUid": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 120 },
+        "text": { "type": "string", "maxLength": 4000 },
+        "attachmentUrl": { "type": "string", "maxLength": 500 },
+        "attachmentType": { "type": "string", "maxLength": 40 },
+        "deliveryStatus": { "type": "string", "enum": ["RECEIVED", "SENT", "DELIVERED", "FAILED"] },
+        "extractedPhones": { "type": "array", "maxLength": 5 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "conversationId", "senderType", "senderUid", "senderName", "text", "deliveryStatus", "viewerUids", "createdAt"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "Sản phẩm bất động sản trong giỏ hàng CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "code": { "type": "string", "maxLength": 50 },
+        "title": { "type": "string", "maxLength": 200 },
+        "propertyType": { "type": "string", "enum": ["LAND", "HOUSE", "APARTMENT", "VILLA", "COMMERCIAL"] },
+        "transactionType": { "type": "string", "enum": ["BUY", "SELL", "RENT"] },
+        "province": { "type": "string", "maxLength": 100 },
+        "district": { "type": "string", "maxLength": 100 },
+        "areaSqm": { "type": "number" },
+        "priceVnd": { "type": "number" },
+        "legalStatus": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["AVAILABLE", "RESERVED", "SOLD"] },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "ownerUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "code", "title", "propertyType", "transactionType", "province", "district", "areaSqm", "priceVnd", "status", "ownerUid", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Công việc chăm sóc khách hàng.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "title": { "type": "string", "maxLength": 200 },
+        "taskType": { "type": "string", "enum": ["CALL", "MESSAGE", "FOLLOW_UP", "SEND_INFO"] },
+        "dueDate": { "type": "string", "maxLength": 40 },
+        "priority": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+        "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "OVERDUE"] },
+        "assignedToUid": { "type": "string", "maxLength": 128 },
+        "assignedToName": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "customerName", "title", "taskType", "dueDate", "priority", "status", "assignedToUid", "createdByUid", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Lịch hẹn gặp hoặc dẫn khách đi xem bất động sản.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "propertyId": { "type": "string", "maxLength": 128 },
+        "propertyTitle": { "type": "string", "maxLength": 200 },
+        "location": { "type": "string", "maxLength": 300 },
+        "scheduledAt": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["SCHEDULED", "CONFIRMED", "COMPLETED", "CANCELLED"] },
+        "assignedToUid": { "type": "string", "maxLength": 128 },
+        "assignedToName": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "customerName", "location", "scheduledAt", "status", "assignedToUid", "createdByUid", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "AiAnalysis": {
+      "title": "AiAnalysis",
+      "description": "Kết quả AI phân tích nhu cầu bất động sản từ hội thoại.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "conversationId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "sourceText": { "type": "string", "maxLength": 4000 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "intent": { "type": "string", "maxLength": 40 },
+        "propertyType": { "type": "string", "maxLength": 40 },
+        "province": { "type": "string", "maxLength": 100 },
+        "district": { "type": "string", "maxLength": 100 },
+        "budgetMin": { "type": "number" },
+        "budgetMax": { "type": "number" },
+        "areaMin": { "type": "number" },
+        "areaMax": { "type": "number" },
+        "legalRequirement": { "type": "string", "maxLength": 200 },
+        "leadScore": { "type": "number" },
+        "priority": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+        "summary": { "type": "string", "maxLength": 1000 },
+        "nextAction": { "type": "string", "maxLength": 300 },
+        "provider": { "type": "string", "maxLength": 40 },
+        "isEditedByHuman": { "type": "boolean" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "sourceText", "intent", "leadScore", "priority", "summary", "createdByUid", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "Tag": {
+      "title": "Tag",
+      "description": "Thẻ phân loại khách hàng.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 60 },
+        "color": { "type": "string", "maxLength": 30 },
+        "category": { "type": "string", "maxLength": 60 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "color", "createdByUid", "viewerUids", "createdAt"]
+    },
+    "CustomerSource": {
+      "title": "CustomerSource",
+      "description": "Nguồn tiếp nhận khách hàng.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "channel": { "type": "string", "maxLength": 60 },
+        "isActive": { "type": "boolean" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "channel", "isActive", "createdByUid", "viewerUids", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Thông báo thời gian thực cho nhân viên.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "recipientUid": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 160 },
+        "body": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["MESSAGE", "PHONE_EXTRACTED", "ASSIGNMENT", "APPOINTMENT", "SYSTEM"] },
+        "isRead": { "type": "boolean" },
+        "linkTarget": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recipientUid", "title", "body", "type", "isRead", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Nhật ký bảo mật và hoạt động hệ thống.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "action": { "type": "string", "maxLength": 100 },
+        "resource": { "type": "string", "maxLength": 100 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorUid", "actorName", "action", "resource", "details", "createdAt"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "Cấu hình hệ thống và quy tắc phân công.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "companyName": { "type": "string", "maxLength": 150 },
+        "autoAssignMethod": { "type": "string", "enum": ["ROUND_ROBIN", "BY_PAGE", "BY_REGION", "BY_TEAM", "MANUAL"] },
+        "preventDuplicateAssignment": { "type": "boolean" },
+        "aiAutoAnalyze": { "type": "boolean" },
+        "aiProvider": { "type": "string", "enum": ["gemini", "openai"] },
+        "dataRetentionDays": { "type": "number" },
+        "updatedByUid": { "type": "string", "maxLength": 128 },
+        "viewerUids": { "type": "array", "maxLength": 50 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyName", "autoAssignMethod", "preventDuplicateAssignment", "aiAutoAnalyze", "aiProvider", "updatedByUid", "viewerUids", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Tài khoản người dùng và vai trò RBAC."
+    },
+    "/staff_directory/{userId}": {
+      "schema": { "$ref": "#/entities/StaffDirectoryEntry" },
+      "description": "Danh bạ nhân viên không chứa PII để hiển thị phân công."
+    },
+    "/teams/{teamId}": {
+      "schema": { "$ref": "#/entities/Team" },
+      "description": "Nhóm nhân viên kinh doanh."
+    },
+    "/facebook_pages/{pageId}": {
+      "schema": { "$ref": "#/entities/FacebookPage" },
+      "description": "Fanpage Facebook kết nối."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Hồ sơ khách hàng bất động sản."
+    },
+    "/customers/{customerId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/CustomerNote" },
+      "description": "Ghi chú chăm sóc khách hàng."
+    },
+    "/customers/{customerId}/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/CustomerActivity" },
+      "description": "Lịch sử chăm sóc và bàn giao khách hàng."
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Hội thoại Messenger."
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Tin nhắn trong hội thoại."
+    },
+    "/properties/{propertyId}": {
+      "schema": { "$ref": "#/entities/Property" },
+      "description": "Danh mục bất động sản."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Công việc chăm sóc khách hàng."
+    },
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Lịch hẹn xem bất động sản."
+    },
+    "/ai_analyses/{analysisId}": {
+      "schema": { "$ref": "#/entities/AiAnalysis" },
+      "description": "Lịch sử phân tích nhu cầu bất động sản bằng AI."
+    },
+    "/tags/{tagId}": {
+      "schema": { "$ref": "#/entities/Tag" },
+      "description": "Thẻ phân loại khách hàng."
+    },
+    "/customer_sources/{sourceId}": {
+      "schema": { "$ref": "#/entities/CustomerSource" },
+      "description": "Nguồn khách hàng."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Thông báo nhân viên."
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Nhật ký hoạt động hệ thống."
+    },
+    "/system_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SystemSetting" },
+      "description": "Cài đặt hệ thống CRM."
+    }
+  }
+}

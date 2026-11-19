@@ -1,0 +1,801 @@
+// Realty Messenger CRM - Full PostgreSQL Relational Blueprint (40 Tables)
+// Generated for VPS / Docker / Cloud SQL PostgreSQL deployment with Prisma ORM.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRoleCode {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  SALE
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PageConnectionStatus {
+  CONNECTED
+  EXPIRED
+  DISCONNECTED
+}
+
+enum RealEstateIntent {
+  BUY_LAND
+  BUY_HOUSE
+  SELL_LAND
+  SELL_HOUSE
+  RENT
+  LEASE
+  INVEST
+  PROJECT_INFO
+  BROKER
+  UNCLEAR
+}
+
+enum LeadPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum MessageSenderType {
+  CUSTOMER
+  AGENT
+  SYSTEM
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// 1. users
+model User {
+  id                     String                   @id @default(cuid())
+  email                  String                   @unique
+  passwordHash           String
+  fullName               String
+  phone                  String?
+  avatarUrl              String?
+  status                 RecordStatus             @default(ACTIVE)
+  lastLoginAt            DateTime?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  deletedAt              DateTime?
+
+  userRoles              UserRole[]
+  teamMembers            TeamMember[]
+  ledTeams               Team[]                   @relation("TeamLeader")
+  facebookAccounts       FacebookAccount[]
+  pagePermissions        FacebookPagePermission[]
+  assignedCustomers      CustomerAssignment[]     @relation("AssignedStaff")
+  assignedCustomersBy    CustomerAssignment[]     @relation("AssignerStaff")
+  assignedConversations  ConversationAssignment[] @relation("ConvAssignedStaff")
+  assignedConversationsBy ConversationAssignment[] @relation("ConvAssignerStaff")
+  notes                  CustomerNote[]
+  activities             CustomerActivity[]
+  appointments           Appointment[]
+  tasks                  Task[]
+  notificationSettings   NotificationSetting[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+  refreshTokens          RefreshToken[]
+  sentMessages           Message[]                @relation("AgentSender")
+
+  @@index([email])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+// 2. roles
+model Role {
+  id              String           @id @default(cuid())
+  code            UserRoleCode     @unique
+  name            String
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+// 3. permissions
+model Permission {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  module          String
+  description     String?
+  createdAt       DateTime         @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+// Join table supporting role -> permission mapping
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// 4. user_roles
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+// 5. teams
+model Team {
+  id        String       @id @default(cuid())
+  name      String
+  region    String?
+  leaderId  String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  leader    User?        @relation("TeamLeader", fields: [leaderId], references: [id])
+  members   TeamMember[]
+
+  @@index([deletedAt])
+  @@map("teams")
+}
+
+// 6. team_members
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  joinedAt  DateTime @default(now())
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// 7. facebook_accounts
+model FacebookAccount {
+  id                  String         @id @default(cuid())
+  userId              String
+  fbUserId            String         @unique
+  fbUserName          String
+  encryptedUserToken  String
+  tokenExpiresAt      DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pages               FacebookPage[]
+
+  @@map("facebook_accounts")
+}
+
+// 8. facebook_pages
+model FacebookPage {
+  id                     String                   @id @default(cuid())
+  facebookAccountId      String
+  pageId                 String                   @unique
+  name                   String
+  category               String?
+  avatarUrl              String?
+  encryptedPageToken     String
+  connectionStatus       PageConnectionStatus     @default(CONNECTED)
+  webhookSubscribed      Boolean                  @default(false)
+  aiEnabled              Boolean                  @default(true)
+  autoAssignRule         String                   @default("ROUND_ROBIN")
+  lastSyncedAt           DateTime?
+  lastError              String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  deletedAt              DateTime?
+
+  facebookAccount        FacebookAccount          @relation(fields: [facebookAccountId], references: [id])
+  permissions            FacebookPagePermission[]
+  webhookSubscriptions   WebhookSubscription[]
+  conversations          Conversation[]
+  customers              Customer[]
+
+  @@index([pageId])
+  @@index([connectionStatus])
+  @@map("facebook_pages")
+}
+
+// 9. facebook_page_permissions
+model FacebookPagePermission {
+  id             String       @id @default(cuid())
+  facebookPageId String
+  userId         String
+  canReply       Boolean      @default(true)
+  canManage      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  facebookPage   FacebookPage @relation(fields: [facebookPageId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([facebookPageId, userId])
+  @@map("facebook_page_permissions")
+}
+
+// 10. webhook_events
+model WebhookEvent {
+  id           String   @id @default(cuid())
+  eventKey     String   @unique
+  pageId       String?
+  eventType    String
+  rawPayload   Json
+  processed    Boolean  @default(false)
+  errorMessage String?
+  receivedAt   DateTime @default(now())
+  processedAt  DateTime?
+
+  @@index([pageId, processed])
+  @@map("webhook_events")
+}
+
+// 11. webhook_subscriptions
+model WebhookSubscription {
+  id               String       @id @default(cuid())
+  facebookPageId   String
+  subscribedFields String[]
+  isActive         Boolean      @default(true)
+  verifiedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  facebookPage     FacebookPage @relation(fields: [facebookPageId], references: [id], onDelete: Cascade)
+
+  @@map("webhook_subscriptions")
+}
+
+// 12. customers
+model Customer {
+  id                String                  @id @default(cuid())
+  fullName          String
+  primaryPhone      String?
+  sourcePageId      String?
+  sourceId          String?
+  status            String                  @default("Khách mới")
+  priority          LeadPriority            @default(MEDIUM)
+  leadScore         Int                     @default(50)
+  notesSummary      String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  deletedAt         DateTime?
+
+  sourcePage        FacebookPage?           @relation(fields: [sourcePageId], references: [id])
+  source            CustomerSource?         @relation(fields: [sourceId], references: [id])
+  phones            CustomerPhone[]
+  socialAccounts    CustomerSocialAccount[]
+  conversations     Conversation[]
+  tagRelations      CustomerTagRelation[]
+  legacyTags        CustomerTag[]
+  notes             CustomerNote[]
+  activities        CustomerActivity[]
+  assignments       CustomerAssignment[]
+  propertyInterests PropertyInterest[]
+  appointments      Appointment[]
+  tasks             Task[]
+  leadScores        LeadScore[]
+  aiAnalyses        AiAnalysis[]
+
+  @@index([primaryPhone])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("customers")
+}
+
+// 13. customer_phones
+model CustomerPhone {
+  id         String   @id @default(cuid())
+  customerId String
+  phone      String
+  isPrimary  Boolean  @default(false)
+  source     String   @default("AUTO_EXTRACT")
+  createdAt  DateTime @default(now())
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, phone])
+  @@index([phone])
+  @@map("customer_phones")
+}
+
+// 14. customer_social_accounts
+model CustomerSocialAccount {
+  id           String   @id @default(cuid())
+  customerId   String
+  platform     String   @default("FACEBOOK_MESSENGER")
+  externalId   String
+  pageId       String?
+  profileName  String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([platform, externalId, pageId])
+  @@map("customer_social_accounts")
+}
+
+// 15. customer_sources
+model CustomerSource {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  channelType String
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+
+  customers   Customer[]
+
+  @@map("customer_sources")
+}
+
+// 16. conversations
+model Conversation {
+  id             String                   @id @default(cuid())
+  facebookPageId String
+  customerId     String
+  externalThread String?
+  psid           String
+  lastMessageAt  DateTime                 @default(now())
+  lastSnippet    String?
+  unreadCount    Int                      @default(0)
+  status         String                   @default("Khách mới")
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  deletedAt      DateTime?
+
+  facebookPage   FacebookPage             @relation(fields: [facebookPageId], references: [id])
+  customer       Customer                 @relation(fields: [customerId], references: [id])
+  assignments    ConversationAssignment[]
+  messages       Message[]
+  aiAnalyses     AiAnalysis[]
+
+  @@unique([facebookPageId, psid])
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+// 17. conversation_assignments
+model ConversationAssignment {
+  id             String       @id @default(cuid())
+  conversationId String
+  assignedToId   String
+  assignedById   String?
+  isActive       Boolean      @default(true)
+  assignedAt     DateTime     @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  assignedTo     User         @relation("ConvAssignedStaff", fields: [assignedToId], references: [id])
+  assignedBy     User?        @relation("ConvAssignerStaff", fields: [assignedById], references: [id])
+
+  @@index([conversationId, isActive])
+  @@map("conversation_assignments")
+}
+
+// 18. messages
+model Message {
+  id                String              @id @default(cuid())
+  conversationId    String
+  externalMessageId String?             @unique
+  senderType        MessageSenderType
+  agentId           String?
+  text              String?
+  extractedPhones   String[]
+  sentAt            DateTime            @default(now())
+  createdAt         DateTime            @default(now())
+
+  conversation      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agent             User?               @relation("AgentSender", fields: [agentId], references: [id])
+  attachments       MessageAttachment[]
+  statuses          MessageStatus[]
+
+  @@index([conversationId, sentAt])
+  @@map("messages")
+}
+
+// 19. message_attachments
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  type      String
+  url       String
+  mimeType  String?
+  fileName  String?
+  createdAt DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("message_attachments")
+}
+
+// 20. message_statuses
+model MessageStatus {
+  id           String         @id @default(cuid())
+  messageId    String
+  status       DeliveryStatus
+  errorDetail  String?
+  recordedAt   DateTime       @default(now())
+
+  message      Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("message_statuses")
+}
+
+// 21. customer_tags (customer-specific quick tags)
+model CustomerTag {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String
+  createdAt  DateTime @default(now())
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("customer_tags")
+}
+
+// 22. tags
+model Tag {
+  id          String                @id @default(cuid())
+  name        String                @unique
+  color       String                @default("#2563EB")
+  category    String                @default("CUSTOMER")
+  createdAt   DateTime              @default(now())
+
+  relations   CustomerTagRelation[]
+
+  @@map("tags")
+}
+
+// 23. customer_tag_relations
+model CustomerTagRelation {
+  id         String   @id @default(cuid())
+  customerId String
+  tagId      String
+  createdAt  DateTime @default(now())
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, tagId])
+  @@map("customer_tag_relations")
+}
+
+// 24. customer_notes
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  authorId   String
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id])
+
+  @@map("customer_notes")
+}
+
+// 25. customer_activities
+model CustomerActivity {
+  id           String   @id @default(cuid())
+  customerId   String
+  actorId      String?
+  activityType String
+  description  String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  actor        User?    @relation(fields: [actorId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@map("customer_activities")
+}
+
+// 26. customer_assignments
+model CustomerAssignment {
+  id           String   @id @default(cuid())
+  customerId   String
+  assignedToId String
+  assignedById String?
+  isActive     Boolean  @default(true)
+  assignedAt   DateTime @default(now())
+
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedTo   User     @relation("AssignedStaff", fields: [assignedToId], references: [id])
+  assignedBy   User?    @relation("AssignerStaff", fields: [assignedById], references: [id])
+
+  @@index([customerId, isActive])
+  @@map("customer_assignments")
+}
+
+// 27. property_interests
+model PropertyInterest {
+  id               String           @id @default(cuid())
+  customerId       String
+  propertyId       String?
+  intent           RealEstateIntent @default(UNCLEAR)
+  propertyType     String?
+  province         String?
+  district         String?
+  ward             String?
+  budgetMin        BigInt?
+  budgetMax        BigInt?
+  areaMin          Float?
+  areaMax          Float?
+  legalRequirement String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  customer         Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  property         Property?        @relation(fields: [propertyId], references: [id])
+
+  @@index([province, district])
+  @@map("property_interests")
+}
+
+// 28. properties
+model Property {
+  id            String             @id @default(cuid())
+  code          String             @unique
+  title         String
+  propertyType  String
+  province      String
+  district      String
+  ward          String?
+  address       String?
+  priceVnd      BigInt
+  areaM2        Float
+  legalStatus   String
+  status        String             @default("AVAILABLE")
+  imageUrl      String?
+  description   String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  deletedAt     DateTime?
+
+  interests     PropertyInterest[]
+  appointments  Appointment[]
+
+  @@index([province, district, status])
+  @@map("properties")
+}
+
+// 29. appointments
+model Appointment {
+  id           String    @id @default(cuid())
+  customerId   String
+  staffId      String
+  propertyId   String?
+  scheduledAt  DateTime
+  location     String
+  status       String    @default("SCHEDULED")
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  staff        User      @relation(fields: [staffId], references: [id])
+  property     Property? @relation(fields: [propertyId], references: [id])
+
+  @@index([scheduledAt, status])
+  @@map("appointments")
+}
+
+// 30. tasks
+model Task {
+  id           String       @id @default(cuid())
+  customerId   String
+  assignedToId String
+  title        String
+  taskType     String       @default("CALL")
+  dueDate      DateTime
+  priority     LeadPriority @default(MEDIUM)
+  status       String       @default("PENDING")
+  notes        String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedTo   User         @relation(fields: [assignedToId], references: [id])
+
+  @@index([dueDate, status])
+  @@map("tasks")
+}
+
+// 31. lead_scores
+model LeadScore {
+  id         String       @id @default(cuid())
+  customerId String
+  score      Int
+  priority   LeadPriority
+  reason     String?
+  createdAt  DateTime     @default(now())
+
+  customer   Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("lead_scores")
+}
+
+// 32. ai_analyses
+model AiAnalysis {
+  id               String           @id @default(cuid())
+  customerId       String?
+  conversationId   String?
+  provider         String
+  modelName        String
+  sourceText       String
+  intent           RealEstateIntent
+  propertyType     String?
+  province         String?
+  district         String?
+  budgetMin        BigInt?
+  budgetMax        BigInt?
+  areaMin          Float?
+  areaMax          Float?
+  legalRequirement String?
+  leadScore        Int
+  priority         LeadPriority
+  summary          String
+  nextAction       String
+  rawJson          Json
+  editedByStaff    Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  customer         Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  conversation     Conversation?    @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@map("ai_analyses")
+}
+
+// 33. ai_prompts
+model AiPrompt {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  systemPrompt String
+  provider    String   @default("gemini")
+  isActive    Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+
+  @@map("ai_prompts")
+}
+
+// 34. notification_settings
+model NotificationSetting {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  notifyOnNewMessage    Boolean  @default(true)
+  notifyOnPhoneCaptured Boolean  @default(true)
+  notifyOnAssignment    Boolean  @default(true)
+  notifyOnAppointment   Boolean  @default(true)
+  updatedAt             DateTime @updatedAt
+
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+// 35. notifications
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  title       String
+  body        String
+  type        String
+  isRead      Boolean  @default(false)
+  linkTarget  String?
+  createdAt   DateTime @default(now())
+
+  recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, isRead])
+  @@map("notifications")
+}
+
+// 36. audit_logs
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  resource   String
+  resourceId String?
+  details    String
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+// 37. system_settings
+model SystemSetting {
+  id                         String   @id @default(cuid())
+  companyName                String
+  autoAssignMethod           String   @default("ROUND_ROBIN")
+  preventDuplicateAssignment Boolean  @default(true)
+  aiAutoAnalyze              Boolean  @default(true)
+  aiProvider                 String   @default("gemini")
+  dataRetentionDays          Int      @default(365)
+  updatedAt                  DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// 38. api_integrations
+model ApiIntegration {
+  id              String   @id @default(cuid())
+  provider        String   @unique
+  displayName     String
+  encryptedSecret String?
+  configJson      Json?
+  isEnabled       Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+
+  @@map("api_integrations")
+}
+
+// 39. refresh_tokens
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// 40. automation_rules
+model AutomationRule {
+  id          String   @id @default(cuid())
+  name        String
+  triggerType String
+  conditions  Json
+  actions     Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("automation_rules")
+}
