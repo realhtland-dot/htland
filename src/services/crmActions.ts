@@ -452,6 +452,62 @@ export async function updateConversationFields(
   }
 }
 
+export async function deleteMessage(
+  conversationId: string,
+  messageId: string,
+  nextLastMessage: string,
+  uid: string,
+  actorName: string
+) {
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'conversations', conversationId, 'messages', messageId));
+    batch.update(doc(db, 'conversations', conversationId), {
+      lastMessage: nextLastMessage.slice(0, 950),
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+    await recordAuditLog(
+      uid,
+      actorName,
+      'DELETE_MESSAGE',
+      `conversations/${conversationId}/messages/${messageId}`,
+      'Xóa tin nhắn trong hội thoại Messenger'
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `conversations/${conversationId}/messages/${messageId}`);
+  }
+}
+
+export async function deleteConversation(
+  conversationId: string,
+  uid: string,
+  actorName: string,
+  isSuperEmail: boolean
+) {
+  try {
+    const msgQuery = isSuperEmail
+      ? query(collection(db, 'conversations', conversationId, 'messages'))
+      : query(collection(db, 'conversations', conversationId, 'messages'), where('viewerUids', 'array-contains', uid));
+    const msgSnap = await getDocs(msgQuery);
+    const batch = writeBatch(db);
+    for (const d of msgSnap.docs) {
+      batch.delete(d.ref);
+    }
+    batch.delete(doc(db, 'conversations', conversationId));
+    await batch.commit();
+    await recordAuditLog(
+      uid,
+      actorName,
+      'DELETE_CONVERSATION',
+      `conversations/${conversationId}`,
+      'Xóa toàn bộ hội thoại Messenger'
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `conversations/${conversationId}`);
+  }
+}
+
 export async function saveProperty(
   property: Omit<PropertyItem, 'id' | 'ownerUid' | 'viewerUids' | 'createdAt' | 'updatedAt'>,
   uid: string,
@@ -514,6 +570,15 @@ export async function updateTaskStatus(taskId: string, status: TaskItem['status'
   }
 }
 
+export async function deleteTask(taskId: string, uid: string, actorName: string) {
+  try {
+    await deleteDoc(doc(db, 'tasks', taskId));
+    await recordAuditLog(uid, actorName, 'DELETE_TASK', `tasks/${taskId}`, 'Xóa lịch chăm sóc khách hàng');
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `tasks/${taskId}`);
+  }
+}
+
 export async function saveAppointment(
   appt: Omit<AppointmentItem, 'id' | 'createdByUid' | 'viewerUids' | 'createdAt' | 'updatedAt'>,
   uid: string
@@ -538,6 +603,15 @@ export async function updateAppointmentStatus(apptId: string, status: Appointmen
     await updateDoc(doc(db, 'appointments', apptId), { status, updatedAt: serverTimestamp() });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `appointments/${apptId}`);
+  }
+}
+
+export async function deleteAppointment(apptId: string, uid: string, actorName: string) {
+  try {
+    await deleteDoc(doc(db, 'appointments', apptId));
+    await recordAuditLog(uid, actorName, 'DELETE_APPOINTMENT', `appointments/${apptId}`, 'Xóa lịch hẹn khách hàng');
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `appointments/${apptId}`);
   }
 }
 
@@ -572,6 +646,34 @@ export async function updateFacebookPage(pageIdDoc: string, patch: Partial<Faceb
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `facebook_pages/${pageIdDoc}`);
+  }
+}
+
+export async function deleteFacebookPage(
+  pageIdDoc: string,
+  pageId: string,
+  pageName: string,
+  uid: string,
+  actorName: string,
+  idToken: string | null
+) {
+  try {
+    if (idToken && pageId) {
+      await fetch(`/api/facebook/pages/${encodeURIComponent(pageId)}/token`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${idToken}` },
+      }).catch(() => {});
+    }
+    await deleteDoc(doc(db, 'facebook_pages', pageIdDoc));
+    await recordAuditLog(
+      uid,
+      actorName,
+      'DELETE_PAGE',
+      `facebook_pages/${pageIdDoc}`,
+      `Xóa Fanpage ${pageName} (Page ID: ${pageId})`
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `facebook_pages/${pageIdDoc}`);
   }
 }
 
@@ -643,6 +745,32 @@ export async function updateUserRole(targetUid: string, role: UserRole, status: 
     await batch.commit();
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `users/${targetUid}`);
+  }
+}
+
+export async function deleteStaffMember(
+  targetUid: string,
+  targetName: string,
+  actorUid: string,
+  actorName: string
+) {
+  if (targetUid === actorUid) {
+    throw new Error('Không thể tự xóa tài khoản đang đăng nhập.');
+  }
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'staff_directory', targetUid));
+    batch.delete(doc(db, 'users', targetUid));
+    await batch.commit();
+    await recordAuditLog(
+      actorUid,
+      actorName,
+      'DELETE_STAFF',
+      `users/${targetUid}`,
+      `Xóa tài khoản nhân viên ${targetName}`
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `users/${targetUid}`);
   }
 }
 

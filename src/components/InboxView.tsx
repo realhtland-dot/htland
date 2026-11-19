@@ -9,6 +9,7 @@ import {
   Search,
   Send,
   Star,
+  Trash2,
   UserPlus,
   AlertCircle,
 } from 'lucide-react';
@@ -25,6 +26,8 @@ import {
 } from '../types/crm.ts';
 import {
   addCustomerNote,
+  deleteConversation,
+  deleteMessage,
   saveAiAnalysisRecord,
   sendConversationReply,
   updateConversationFields,
@@ -53,6 +56,8 @@ export const InboxView: React.FC<{ data: CrmDataset }> = ({ data }) => {
   const [analyzingAi, setAnalyzingAi] = useState(false);
   const [sendViaMetaApi, setSendViaMetaApi] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
+  const [confirmDeleteMsg, setConfirmDeleteMsg] = useState<MessageItem | null>(null);
+  const [confirmDeleteConv, setConfirmDeleteConv] = useState(false);
 
   const filteredConversations = useMemo(() => {
     return data.conversations
@@ -483,6 +488,14 @@ export const InboxView: React.FC<{ data: CrmDataset }> = ({ data }) => {
                   <Cpu className="w-3.5 h-3.5" />
                   {analyzingAi ? 'Đang phân tích...' : 'Phân tích AI'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteConv(true)}
+                  title="Xóa hội thoại"
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
 
@@ -543,6 +556,16 @@ export const InboxView: React.FC<{ data: CrmDataset }> = ({ data }) => {
                           </span>
                         </>
                       )}
+                      <span>·</span>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteMsg(msg)}
+                        title="Xóa tin nhắn"
+                        className="inline-flex items-center gap-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Xóa</span>
+                      </button>
                     </div>
                   </div>
                 );
@@ -815,7 +838,90 @@ export const InboxView: React.FC<{ data: CrmDataset }> = ({ data }) => {
             </div>
           </>
         )}
+      {/* Column 3 Close */}
       </div>
+
+      {/* Delete Message Confirmation Modal */}
+      {confirmDeleteMsg && activeConversation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa tin nhắn</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-3">
+              Bạn có chắc chắn muốn xóa tin nhắn: &ldquo;{confirmDeleteMsg.text || '[Tệp đính kèm]'}&rdquo;?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteMsg(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  const remaining = messages.filter((m) => m.id !== confirmDeleteMsg.id);
+                  const nextLast =
+                    remaining.length > 0
+                      ? remaining[remaining.length - 1].text || '[Tệp đính kèm]'
+                      : '(Đã xóa tin nhắn)';
+                  await deleteMessage(
+                    activeConversation.id,
+                    confirmDeleteMsg.id,
+                    nextLast,
+                    firebaseUser.uid,
+                    crmUser?.displayName || 'Nhân viên'
+                  );
+                  setConfirmDeleteMsg(null);
+                  pushToast({ title: 'Đã xóa tin nhắn', variant: 'success' });
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Xóa tin nhắn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Conversation Confirmation Modal */}
+      {confirmDeleteConv && activeConversation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa hội thoại</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Xóa toàn bộ tin nhắn và hội thoại với <span className="font-semibold">{activeConversation.customerName}</span>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteConv(false)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  await deleteConversation(
+                    activeConversation.id,
+                    firebaseUser.uid,
+                    crmUser?.displayName || 'Nhân viên',
+                    firebaseUser.email === 'real.htland@gmail.com'
+                  );
+                  setConfirmDeleteConv(false);
+                  pushToast({ title: 'Đã xóa hội thoại Messenger', variant: 'success' });
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Xóa hội thoại
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

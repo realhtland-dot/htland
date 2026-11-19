@@ -7,12 +7,14 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  Trash2,
   Unlink,
 } from 'lucide-react';
 import type { CrmDataset } from '../hooks/useCrmData.ts';
 import { useAuth } from '../services/authContext.tsx';
 import { useCrmStore } from '../store/useCrmStore.ts';
-import { saveFacebookPage, updateFacebookPage } from '../services/crmActions.ts';
+import { deleteConversation, deleteFacebookPage, saveFacebookPage, updateFacebookPage } from '../services/crmActions.ts';
+import type { ConversationItem, FacebookPageItem } from '../types/crm.ts';
 import { formatTimestamp } from '../utils/format.ts';
 
 interface MetaConfigStatus {
@@ -24,8 +26,18 @@ interface MetaConfigStatus {
 }
 
 export const PagesView: React.FC<{ data: CrmDataset }> = ({ data }) => {
-  const { getIdToken } = useAuth();
+  const { firebaseUser, crmUser, getIdToken } = useAuth();
   const { setRoute, pushToast } = useCrmStore();
+  const [confirmDeletePage, setConfirmDeletePage] = useState<FacebookPageItem | null>(null);
+  const [deletingPage, setDeletingPage] = useState(false);
+
+  const isAdminUser =
+    firebaseUser?.email === 'real.htland@gmail.com' ||
+    crmUser?.role === 'SUPER_ADMIN' ||
+    crmUser?.role === 'ADMIN';
+
+  const canDeletePage = (page: FacebookPageItem) =>
+    isAdminUser || (crmUser?.role === 'MANAGER' && page.connectedByUid === firebaseUser?.uid);
 
   const handleToggleWebhook = async (pageIdDoc: string, pageId: string, currentlySubscribed: boolean) => {
     if (!currentlySubscribed) {
@@ -75,116 +87,207 @@ export const PagesView: React.FC<{ data: CrmDataset }> = ({ data }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {data.pages.map((page) => (
-          <div
-            key={page.id}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4"
+      {data.pages.length === 0 ? (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center space-y-3">
+          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            Chưa có Fanpage nào được kết nối trong hệ thống.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRoute('facebook-connect')}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <img
-                  src={page.avatarUrl || '/src/assets/images/property_land_cuchi_1795074676243.jpg'}
-                  alt={page.name}
-                  referrerPolicy="no-referrer"
-                  className="w-12 h-12 rounded-xl object-cover shrink-0 bg-slate-200 dark:bg-slate-800"
-                />
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-50 truncate">
-                    {page.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-mono">
-                    Page ID: {page.pageId}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {page.connectionStatus === 'CONNECTED' ? (
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Đang kết nối
-                      </span>
-                    ) : (
-                      <span className="text-amber-600 dark:text-amber-400 font-medium inline-flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" /> {page.connectionStatus}
-                      </span>
-                    )}{' '}
-                    · Webhook: {page.webhookSubscribed ? 'Đã đăng ký' : 'Chưa kích hoạt'}
-                  </p>
+            <Facebook className="w-4 h-4" />
+            Kết nối Fanpage ngay
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {data.pages.map((page) => {
+            const allowDelete = canDeletePage(page);
+            return (
+              <div
+                key={page.id}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={page.avatarUrl || '/src/assets/images/property_land_cuchi_1795074676243.jpg'}
+                      alt={page.name}
+                      referrerPolicy="no-referrer"
+                      className="w-12 h-12 rounded-xl object-cover shrink-0 bg-slate-200 dark:bg-slate-800"
+                    />
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-50 truncate">
+                        {page.name}
+                      </h3>
+                      <p className="text-xs text-slate-500 font-mono">
+                        Page ID: {page.pageId}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {page.connectionStatus === 'CONNECTED' ? (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Đang kết nối
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400 font-medium inline-flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5" /> {page.connectionStatus}
+                          </span>
+                        )}{' '}
+                        · Webhook: {page.webhookSubscribed ? 'Đã đăng ký' : 'Chưa kích hoạt'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {page.lastError && (
+                  <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-200">
+                    {page.lastError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-3 py-3 border-y border-slate-100 dark:border-slate-800 text-center">
+                  <div>
+                    <p className="text-lg font-display font-bold tabular-nums">{page.totalConversations ?? 0}</p>
+                    <p className="text-[11px] text-slate-500">Hội thoại</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-display font-bold tabular-nums">{page.totalCustomers ?? 0}</p>
+                    <p className="text-[11px] text-slate-500">Khách hàng</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-display font-bold tabular-nums">{page.totalMessages ?? 0}</p>
+                    <p className="text-[11px] text-slate-500">Tin nhắn</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <label className="flex items-center justify-between p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 cursor-pointer">
+                    <span>AI phân tích tự động</span>
+                    <input
+                      type="checkbox"
+                      checked={page.aiEnabled}
+                      onChange={(e) => updateFacebookPage(page.id, { aiEnabled: e.target.checked })}
+                    />
+                  </label>
+                  <select
+                    value={page.autoAssignRule}
+                    onChange={(e) =>
+                      updateFacebookPage(page.id, {
+                        autoAssignRule: e.target.value as 'ROUND_ROBIN' | 'REGION' | 'TEAM' | 'MANUAL',
+                      })
+                    }
+                    className="px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
+                  >
+                    <option value="ROUND_ROBIN">Chia luân phiên</option>
+                    <option value="REGION">Theo khu vực</option>
+                    <option value="TEAM">Theo nhóm Sale</option>
+                    <option value="MANUAL">Phân công thủ công</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleWebhook(page.id, page.pageId, page.webhookSubscribed)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    {page.webhookSubscribed ? 'Tắt Webhook' : 'Đăng ký Webhook'}
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateFacebookPage(page.id, {
+                          connectionStatus: 'DISCONNECTED',
+                          webhookSubscribed: false,
+                          lastError: 'Đã ngắt kết nối bởi quản trị viên.',
+                        })
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer"
+                    >
+                      <Unlink className="w-3.5 h-3.5" />
+                      Ngắt kết nối
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!allowDelete}
+                      title={
+                        allowDelete
+                          ? 'Xóa Fanpage khỏi hệ thống'
+                          : 'Chỉ Quản trị viên hoặc Quản lý đã kết nối mới được xóa Fanpage'
+                      }
+                      onClick={() => setConfirmDeletePage(page)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Xóa Fanpage
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            );
+          })}
+        </div>
+      )}
 
-            {page.lastError && (
-              <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-200">
-                {page.lastError}
-              </div>
-            )}
-
-            <div className="grid grid-cols-3 gap-3 py-3 border-y border-slate-100 dark:border-slate-800 text-center">
-              <div>
-                <p className="text-lg font-display font-bold tabular-nums">{page.totalConversations ?? 0}</p>
-                <p className="text-[11px] text-slate-500">Hội thoại</p>
-              </div>
-              <div>
-                <p className="text-lg font-display font-bold tabular-nums">{page.totalCustomers ?? 0}</p>
-                <p className="text-[11px] text-slate-500">Khách hàng</p>
-              </div>
-              <div>
-                <p className="text-lg font-display font-bold tabular-nums">{page.totalMessages ?? 0}</p>
-                <p className="text-[11px] text-slate-500">Tin nhắn</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <label className="flex items-center justify-between p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 cursor-pointer">
-                <span>AI phân tích tự động</span>
-                <input
-                  type="checkbox"
-                  checked={page.aiEnabled}
-                  onChange={(e) => updateFacebookPage(page.id, { aiEnabled: e.target.checked })}
-                />
-              </label>
-              <select
-                value={page.autoAssignRule}
-                onChange={(e) =>
-                  updateFacebookPage(page.id, {
-                    autoAssignRule: e.target.value as 'ROUND_ROBIN' | 'REGION' | 'TEAM' | 'MANUAL',
-                  })
-                }
-                className="px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
-              >
-                <option value="ROUND_ROBIN">Chia luân phiên</option>
-                <option value="REGION">Theo khu vực</option>
-                <option value="TEAM">Theo nhóm Sale</option>
-                <option value="MANUAL">Phân công thủ công</option>
-              </select>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+      {confirmDeletePage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa Fanpage</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Bạn có chắc chắn muốn xóa Fanpage{' '}
+              <span className="font-semibold">{confirmDeletePage.name}</span> (Page ID:{' '}
+              <span className="font-mono">{confirmDeletePage.pageId}</span>) khỏi hệ thống? Token kết nối trên máy chủ
+              cũng sẽ bị gỡ bỏ.
+            </p>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => handleToggleWebhook(page.id, page.pageId, page.webhookSubscribed)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                disabled={deletingPage}
+                onClick={() => setConfirmDeletePage(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                {page.webhookSubscribed ? 'Tắt Webhook' : 'Đăng ký Webhook'}
+                Hủy
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  updateFacebookPage(page.id, {
-                    connectionStatus: 'DISCONNECTED',
-                    webhookSubscribed: false,
-                    lastError: 'Đã ngắt kết nối bởi quản trị viên.',
-                  })
-                }
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
+                disabled={deletingPage}
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  setDeletingPage(true);
+                  try {
+                    const token = await getIdToken();
+                    await deleteFacebookPage(
+                      confirmDeletePage.id,
+                      confirmDeletePage.pageId,
+                      confirmDeletePage.name,
+                      firebaseUser.uid,
+                      crmUser?.displayName || 'Quản trị viên',
+                      token
+                    );
+                    setConfirmDeletePage(null);
+                    pushToast({ title: 'Đã xóa Fanpage khỏi hệ thống', variant: 'success' });
+                  } catch (err) {
+                    pushToast({
+                      title: 'Không thể xóa Fanpage',
+                      description: err instanceof Error ? err.message : 'Bạn không có quyền thực hiện thao tác này.',
+                      variant: 'error',
+                    });
+                  } finally {
+                    setDeletingPage(false);
+                  }
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-semibold cursor-pointer"
               >
-                <Unlink className="w-3.5 h-3.5" />
-                Ngắt kết nối
+                {deletingPage ? 'Đang xóa...' : 'Xóa Fanpage'}
               </button>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -519,7 +622,10 @@ export const FacebookConnectView: React.FC<{ data: CrmDataset }> = ({ data }) =>
 };
 
 export const ConversationsView: React.FC<{ data: CrmDataset }> = ({ data }) => {
-  const { openConversation } = useCrmStore();
+  const { firebaseUser, crmUser } = useAuth();
+  const { openConversation, pushToast } = useCrmStore();
+  const [confirmDeleteConv, setConfirmDeleteConv] = useState<ConversationItem | null>(null);
+
   return (
     <div className="space-y-5">
       <div>
@@ -539,6 +645,7 @@ export const ConversationsView: React.FC<{ data: CrmDataset }> = ({ data }) => {
                 <th className="py-3 px-4 font-semibold">Phụ trách</th>
                 <th className="py-3 px-4 font-semibold">Trạng thái</th>
                 <th className="py-3 px-4 font-semibold text-right">Cập nhật</th>
+                <th className="py-3 px-4 font-semibold text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -562,12 +669,59 @@ export const ConversationsView: React.FC<{ data: CrmDataset }> = ({ data }) => {
                   <td className="py-3 px-4 text-right font-mono tabular-nums text-slate-500">
                     {formatTimestamp(c.updatedAt)}
                   </td>
+                  <td className="py-3 px-4 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteConv(c)}
+                      title="Xóa hội thoại"
+                      className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {confirmDeleteConv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa hội thoại</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Bạn có chắc chắn muốn xóa hội thoại của <span className="font-semibold">{confirmDeleteConv.customerName}</span>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteConv(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  await deleteConversation(
+                    confirmDeleteConv.id,
+                    firebaseUser.uid,
+                    crmUser?.displayName || 'Nhân viên',
+                    firebaseUser.email === 'real.htland@gmail.com'
+                  );
+                  setConfirmDeleteConv(null);
+                  pushToast({ title: 'Đã xóa hội thoại', variant: 'success' });
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Xóa hội thoại
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

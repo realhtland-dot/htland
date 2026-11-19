@@ -472,7 +472,7 @@ service cloud.firestore {
           isAdmin() ||
           incoming().diff(existing()).affectedKeys().hasOnly(['aiEnabled', 'autoAssignRule', 'connectionStatus', 'webhookSubscribed', 'totalConversations', 'totalCustomers', 'totalMessages', 'lastError', 'viewerUids', 'updatedAt'])
         );
-      allow delete: if isValidId(pageId) && isAdmin();
+      allow delete: if isValidId(pageId) && isVerified() && (isAdmin() || (isManagerOrAbove() && existing().connectedByUid == request.auth.uid));
     }
 
     // 5. Customers
@@ -494,7 +494,7 @@ service cloud.firestore {
           ((existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid || request.auth.uid in existing().viewerUids)
             && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'primaryPhone', 'phones', 'intent', 'propertyType', 'province', 'district', 'budgetMin', 'budgetMax', 'areaMin', 'areaMax', 'legalRequirement', 'leadScore', 'priority', 'status', 'tags', 'notesSummary', 'assignedToUid', 'assignedToName', 'viewerUids', 'updatedAt']))
         );
-      allow delete: if isValidId(customerId) && isAdmin();
+      allow delete: if isValidId(customerId) && isVerified() && (isAdmin() || existing().createdByUid == request.auth.uid || existing().assignedToUid == request.auth.uid);
 
       // Subcollection: Notes (Master Gate)
       match /notes/{noteId} {
@@ -563,7 +563,7 @@ service cloud.firestore {
               incoming().diff(existing()).affectedKeys().hasOnly(['assignedToUid', 'assignedToName', 'viewerUids', 'updatedAt'])
             ))
         );
-      allow delete: if isValidId(conversationId) && isAdmin();
+      allow delete: if isValidId(conversationId) && isVerified() && (isAdmin() || existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid);
 
       // Subcollection: Messages (Master Gate)
       match /messages/{messageId} {
@@ -583,7 +583,8 @@ service cloud.firestore {
           && incoming().senderUid == request.auth.uid
           && incoming().createdAt == request.time;
         allow update: if isValidId(conversationId) && isValidId(messageId) && isAdmin() && isValidMessage(incoming());
-        allow delete: if isValidId(conversationId) && isValidId(messageId) && isAdmin();
+        allow delete: if isValidId(conversationId) && isValidId(messageId) && isVerified()
+          && (isAdmin() || existing().senderUid == request.auth.uid || (exists(/databases/$(database)/documents/conversations/$(conversationId)) && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.viewerUids));
       }
     }
 
@@ -629,7 +630,7 @@ service cloud.firestore {
             && (existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids)
             && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'dueDate', 'priority', 'updatedAt']))
         );
-      allow delete: if isValidId(taskId) && isAdmin();
+      allow delete: if isValidId(taskId) && isVerified() && (isAdmin() || existing().createdByUid == request.auth.uid || existing().assignedToUid == request.auth.uid);
     }
 
     // 9. Appointments
@@ -652,7 +653,7 @@ service cloud.firestore {
             && (existing().assignedToUid == request.auth.uid || request.auth.uid in existing().viewerUids)
             && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'scheduledAt', 'location', 'notes', 'updatedAt']))
         );
-      allow delete: if isValidId(appointmentId) && isAdmin();
+      allow delete: if isValidId(appointmentId) && isVerified() && (isAdmin() || existing().createdByUid == request.auth.uid || existing().assignedToUid == request.auth.uid);
     }
 
     // 10. AI Analyses

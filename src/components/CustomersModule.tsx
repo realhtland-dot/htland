@@ -625,6 +625,7 @@ export const CustomerDetailView: React.FC<{ data: CrmDataset }> = ({ data }) => 
   const [notes, setNotes] = useState<CustomerNoteItem[]>([]);
   const [activities, setActivities] = useState<CustomerActivityItem[]>([]);
   const [noteText, setNoteText] = useState('');
+  const [confirmDeleteDetail, setConfirmDeleteDetail] = useState(false);
 
   const customer = useMemo(
     () => data.customers.find((c) => c.id === selectedCustomerId) || data.customers[0] || null,
@@ -688,15 +689,25 @@ export const CustomerDetailView: React.FC<{ data: CrmDataset }> = ({ data }) => 
           <ArrowLeft className="w-4 h-4" />
           Danh sách khách hàng
         </button>
-        {linkedConv && (
+        <div className="flex items-center gap-2">
+          {linkedConv && (
+            <button
+              type="button"
+              onClick={() => openConversation(linkedConv.id)}
+              className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+            >
+              Mở hội thoại Messenger
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => openConversation(linkedConv.id)}
-            className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+            onClick={() => setConfirmDeleteDetail(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer"
           >
-            Mở hội thoại Messenger
+            <Trash2 className="w-3.5 h-3.5" />
+            Xóa khách hàng
           </button>
-        )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -808,6 +819,43 @@ export const CustomerDetailView: React.FC<{ data: CrmDataset }> = ({ data }) => 
           </div>
         </div>
       </div>
+
+      {confirmDeleteDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa khách hàng</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Bạn có chắc chắn muốn xóa hồ sơ <span className="font-semibold">{customer.fullName}</span>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteDetail(false)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  await deleteCustomer(
+                    customer.id,
+                    firebaseUser.uid,
+                    crmUser?.displayName || 'Nhân viên'
+                  );
+                  setConfirmDeleteDetail(false);
+                  pushToast({ title: 'Đã xóa khách hàng', variant: 'success' });
+                  setRoute('customers');
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Xóa vĩnh viễn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

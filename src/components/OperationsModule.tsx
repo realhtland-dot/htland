@@ -4,7 +4,9 @@ import type { CrmDataset } from '../hooks/useCrmData.ts';
 import { useAuth } from '../services/authContext.tsx';
 import { useCrmStore } from '../store/useCrmStore.ts';
 import {
+  deleteAppointment,
   deleteProperty,
+  deleteTask,
   saveAppointment,
   saveProperty,
   saveTask,
@@ -18,6 +20,7 @@ export const TasksView: React.FC<{ data: CrmDataset }> = ({ data }) => {
   const { firebaseUser, crmUser } = useAuth();
   const { pushToast, openCustomerDetail } = useCrmStore();
   const [showModal, setShowModal] = useState(false);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState<TaskItem | null>(null);
   const [form, setForm] = useState({
     customerId: data.customers[0]?.id || '',
     title: '',
@@ -130,6 +133,14 @@ export const TasksView: React.FC<{ data: CrmDataset }> = ({ data }) => {
                 >
                   {task.status}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteTask(task)}
+                  title="Xóa lịch chăm sóc"
+                  className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ))
@@ -213,6 +224,41 @@ export const TasksView: React.FC<{ data: CrmDataset }> = ({ data }) => {
           </div>
         </div>
       )}
+      {confirmDeleteTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa lịch chăm sóc</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Bạn có chắc chắn muốn xóa lịch <span className="font-semibold">{confirmDeleteTask.title}</span>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteTask(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  await deleteTask(
+                    confirmDeleteTask.id,
+                    firebaseUser.uid,
+                    crmUser?.displayName || 'Nhân viên'
+                  );
+                  setConfirmDeleteTask(null);
+                  pushToast({ title: 'Đã xóa lịch chăm sóc', variant: 'success' });
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Xóa lịch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -221,6 +267,7 @@ export const AppointmentsView: React.FC<{ data: CrmDataset }> = ({ data }) => {
   const { firebaseUser, crmUser } = useAuth();
   const { pushToast } = useCrmStore();
   const [showModal, setShowModal] = useState(false);
+  const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<AppointmentItem | null>(null);
   const [form, setForm] = useState({
     customerId: data.customers[0]?.id || '',
     propertyId: data.properties[0]?.id || '',
@@ -289,19 +336,29 @@ export const AppointmentsView: React.FC<{ data: CrmDataset }> = ({ data }) => {
                   <span className="font-mono tabular-nums">{appt.scheduledAt}</span>
                 </p>
               </div>
-              <select
-                value={appt.status}
-                disabled={appt.status === 'COMPLETED' || appt.status === 'CANCELLED'}
-                onChange={(e) =>
-                  updateAppointmentStatus(appt.id, e.target.value as AppointmentItem['status'])
-                }
-                className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
-              >
-                <option value="SCHEDULED">Đã lên lịch</option>
-                <option value="CONFIRMED">Đã xác nhận</option>
-                <option value="COMPLETED">Hoàn thành</option>
-                <option value="CANCELLED">Đã hủy</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={appt.status}
+                  disabled={appt.status === 'COMPLETED' || appt.status === 'CANCELLED'}
+                  onChange={(e) =>
+                    updateAppointmentStatus(appt.id, e.target.value as AppointmentItem['status'])
+                  }
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
+                >
+                  <option value="SCHEDULED">Đã lên lịch</option>
+                  <option value="CONFIRMED">Đã xác nhận</option>
+                  <option value="COMPLETED">Hoàn thành</option>
+                  <option value="CANCELLED">Đã hủy</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteAppt(appt)}
+                  title="Xóa lịch hẹn"
+                  className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             {appt.propertyTitle && (
               <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
@@ -392,6 +449,41 @@ export const AppointmentsView: React.FC<{ data: CrmDataset }> = ({ data }) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {confirmDeleteAppt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa lịch hẹn</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Bạn có chắc chắn muốn xóa lịch hẹn với <span className="font-semibold">{confirmDeleteAppt.customerName}</span> lúc <span className="font-mono">{confirmDeleteAppt.scheduledAt}</span>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteAppt(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  await deleteAppointment(
+                    confirmDeleteAppt.id,
+                    firebaseUser.uid,
+                    crmUser?.displayName || 'Nhân viên'
+                  );
+                  setConfirmDeleteAppt(null);
+                  pushToast({ title: 'Đã xóa lịch hẹn khách hàng', variant: 'success' });
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Xóa lịch hẹn
+              </button>
+            </div>
           </div>
         </div>
       )}

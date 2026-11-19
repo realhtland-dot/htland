@@ -4,6 +4,7 @@ import type { CrmDataset } from '../hooks/useCrmData.ts';
 import { useAuth } from '../services/authContext.tsx';
 import { useCrmStore } from '../store/useCrmStore.ts';
 import {
+  deleteStaffMember,
   deleteTag,
   markNotificationRead,
   saveCustomerSource,
@@ -12,13 +13,20 @@ import {
   updateSystemSettings,
   updateUserRole,
 } from '../services/crmActions.ts';
-import { ROLE_LABELS, type CrmRoute, type SystemSettingItem, type UserRole } from '../types/crm.ts';
+import {
+  ROLE_LABELS,
+  type CrmRoute,
+  type StaffDirectoryItem,
+  type SystemSettingItem,
+  type UserRole,
+} from '../types/crm.ts';
 import { formatTimestamp } from '../utils/format.ts';
 
 export const StaffView: React.FC<{ data: CrmDataset }> = ({ data }) => {
-  const { crmUser } = useAuth();
+  const { firebaseUser, crmUser } = useAuth();
   const { pushToast } = useCrmStore();
   const isAdmin = crmUser?.role === 'SUPER_ADMIN' || crmUser?.role === 'ADMIN';
+  const [confirmDeleteStaff, setConfirmDeleteStaff] = useState<StaffDirectoryItem | null>(null);
 
   return (
     <div className="space-y-5">
@@ -30,53 +38,114 @@ export const StaffView: React.FC<{ data: CrmDataset }> = ({ data }) => {
       </div>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-        <table className="w-full text-xs text-left">
-          <thead>
-            <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 text-slate-500">
-              <th className="py-3 px-4 font-semibold">Họ tên</th>
-              <th className="py-3 px-4 font-semibold">UID</th>
-              <th className="py-3 px-4 font-semibold">Vai trò</th>
-              <th className="py-3 px-4 font-semibold">Trạng thái</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {data.staffDirectory.map((s) => (
-              <tr key={s.uid}>
-                <td className="py-3 px-4 font-semibold">{s.displayName}</td>
-                <td className="py-3 px-4 font-mono text-slate-500">{s.uid}</td>
-                <td className="py-3 px-4">
-                  <select
-                    disabled={!isAdmin}
-                    value={s.role}
-                    onChange={async (e) => {
-                      await updateUserRole(s.uid, e.target.value as UserRole, s.status);
-                      pushToast({ title: 'Đã cập nhật vai trò nhân viên', variant: 'success' });
-                    }}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
-                  >
-                    {Object.entries(ROLE_LABELS).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="py-3 px-4">
-                  <span
-                    className={
-                      s.status === 'ACTIVE'
-                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                        : 'text-slate-400'
-                    }
-                  >
-                    {s.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tạm khóa'}
-                  </span>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 text-slate-500">
+                <th className="py-3 px-4 font-semibold">Họ tên</th>
+                <th className="py-3 px-4 font-semibold">UID</th>
+                <th className="py-3 px-4 font-semibold">Vai trò</th>
+                <th className="py-3 px-4 font-semibold">Trạng thái</th>
+                <th className="py-3 px-4 font-semibold text-right">Thao tác</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {data.staffDirectory.map((s) => {
+                const isSelf = s.uid === firebaseUser?.uid;
+                return (
+                  <tr key={s.uid}>
+                    <td className="py-3 px-4 font-semibold">{s.displayName}</td>
+                    <td className="py-3 px-4 font-mono text-slate-500">{s.uid}</td>
+                    <td className="py-3 px-4">
+                      <select
+                        disabled={!isAdmin}
+                        value={s.role}
+                        onChange={async (e) => {
+                          await updateUserRole(s.uid, e.target.value as UserRole, s.status);
+                          pushToast({ title: 'Đã cập nhật vai trò nhân viên', variant: 'success' });
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
+                      >
+                        {Object.entries(ROLE_LABELS).map(([k, v]) => (
+                          <option key={k} value={k}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={
+                          s.status === 'ACTIVE'
+                            ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                            : 'text-slate-400'
+                        }
+                      >
+                        {s.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tạm khóa'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        type="button"
+                        disabled={!isAdmin || isSelf}
+                        onClick={() => setConfirmDeleteStaff(s)}
+                        title={
+                          isSelf
+                            ? 'Không thể tự xóa tài khoản của chính mình'
+                            : isAdmin
+                              ? 'Xóa nhân viên'
+                              : 'Chỉ Quản trị viên mới có quyền xóa nhân viên'
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Xóa</span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {confirmDeleteStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-base font-bold text-red-600 dark:text-red-400">Xác nhận xóa nhân viên</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Bạn có chắc chắn muốn xóa nhân viên <span className="font-semibold">{confirmDeleteStaff.displayName}</span> khỏi hệ thống CRM?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteStaff(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!firebaseUser) return;
+                  await deleteStaffMember(
+                    confirmDeleteStaff.uid,
+                    confirmDeleteStaff.displayName,
+                    firebaseUser.uid,
+                    crmUser?.displayName || 'Quản trị viên'
+                  );
+                  setConfirmDeleteStaff(null);
+                  pushToast({ title: 'Đã xóa nhân viên khỏi hệ thống', variant: 'success' });
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Xóa nhân viên
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
